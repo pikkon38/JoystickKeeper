@@ -10,7 +10,7 @@ public sealed record UpdateInfo(Version Version, string DownloadUrl);
 /// <summary>Checks GitHub Releases for a newer JoystickKeeper.exe and swaps it in place of the running copy.</summary>
 public static class Updater
 {
-    const string Repo = "pikkon38/JoysticKeeper";
+    const string Repo = "pikkon38/JoystickKeeper";
     const string AssetName = "JoystickKeeper.exe";
 
     public static Version Current => Normalize(Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0));
