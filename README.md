@@ -25,9 +25,15 @@ dotnet publish src/JoystickKeeper -c Release -r win-x64 --self-contained true -p
 dotnet run --project tests/JoystickKeeper.Tests
 ```
 
+## Install
+
+Download `JoystickKeeper-Setup.exe` from the latest release. It installs for your user only (no admin prompt) into
+`%LOCALAPPDATA%\Programs\JoystickKeeper`, adds Start menu and optional desktop shortcuts, and an uninstall entry.
+Or download `JoystickKeeper.exe` and run it from any folder.
+
 ## Releases and updates
 
 Pushing a tag like `v0.5.0` makes GitHub Actions run the tests, build `JoystickKeeper.exe` with that version, and
-attach it to a new release. The app checks the latest release when it starts; if it's newer, an
+attach it and `JoystickKeeper-Setup.exe` to a new release. The app checks the latest release when it starts; if it's newer, an
 "Update to vX" button appears. Clicking it downloads the new exe, closes the app, swaps the file and reopens it.
 Updating is blocked while a Star Citizen session has the bindings remapped.
