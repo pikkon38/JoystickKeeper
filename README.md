@@ -24,3 +24,10 @@ Files live in `%APPDATA%\JoystickKeeper` (`profile.json`, `applied.json` while a
 dotnet publish src/JoystickKeeper -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 dotnet run --project tests/JoystickKeeper.Tests
 ```
+
+## Releases and updates
+
+Pushing a tag like `v0.5.0` makes GitHub Actions run the tests, build `JoystickKeeper.exe` with that version, and
+attach it to a new release. The app checks the latest release when it starts; if it's newer, an
+"Update to vX" button appears. Clicking it downloads the new exe, closes the app, swaps the file and reopens it.
+Updating is blocked while a Star Citizen session has the bindings remapped.
