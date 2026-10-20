@@ -27,6 +27,9 @@ public sealed class MainForm : Form
     readonly Label _launchState = new() { AutoSize = true, Padding = new Padding(10, 14, 0, 0), Font = new Font("Segoe UI", 10f) };
     readonly Button _launch = new() { Text = "Fix bindings && open RSI Launcher", Width = 300, Height = 44, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
     readonly Button _restore = new() { Text = "Put bindings back now", AutoSize = true, Height = 44, Visible = false };
+    readonly Button _update = new() { AutoSize = true, Height = 44, Visible = false, BackColor = Color.FromArgb(198, 239, 206) };
+    readonly LinkLabel _checkUpdates = new() { Text = "Check for updates", AutoSize = true, Dock = DockStyle.Right, Padding = new Padding(0, 6, 0, 0) };
+    UpdateInfo? _available;
     readonly Button _import = new() { Text = "Fill in from Star Citizen bindings", AutoSize = true };
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 50 };
     readonly System.Windows.Forms.Timer _watch = new() { Interval = 2000 };
@@ -34,7 +37,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Joystick Keeper";
+        Text = $"Joystick Keeper v{Updater.Current.ToString(3)}";
         Width = 1180;
         Height = 600;
         MinimumSize = new Size(900, 450);
@@ -65,7 +68,9 @@ public sealed class MainForm : Form
         var launchBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 62, Padding = new Padding(8, 8, 8, 0) };
         _launch.Click += (_, _) => Launch();
         _restore.Click += (_, _) => RestoreBindings("Bindings put back to your saved setup.");
-        launchBar.Controls.AddRange(new Control[] { _launch, _restore, _launchState });
+        _update.Click += async (_, _) => await InstallUpdate();
+        _checkUpdates.LinkClicked += async (_, _) => await CheckForUpdates(userAsked: true);
+        launchBar.Controls.AddRange(new Control[] { _launch, _restore, _update, _launchState });
 
         // Grow the help line to fit its text at any window width or display scaling.
         void FitHelp() => help.Height = TextRenderer.MeasureText(help.Text, help.Font,
@@ -75,6 +80,7 @@ public sealed class MainForm : Form
 
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(10, 0, 10, 0) };
         bottom.Controls.Add(_status);
+        bottom.Controls.Add(_checkUpdates);
 
         Controls.Add(_grid);
         Controls.Add(help);
@@ -113,6 +119,7 @@ public sealed class MainForm : Form
             ImportFromStarCitizen(showSummary: false);
         UpdateLaunchUi();
         _poll.Start();
+        _ = CheckForUpdates(userAsked: false);
     }
 
     void BuildGrid()
@@ -492,6 +499,60 @@ public sealed class MainForm : Form
             _applied = null;
         }
         UpdateLaunchUi(message);
+    }
+
+    // ---------- updates ----------
+
+    async Task CheckForUpdates(bool userAsked)
+    {
+        _checkUpdates.Enabled = false;
+        try
+        {
+            _available = await Updater.CheckAsync();
+            if (_available != null)
+            {
+                _update.Text = $"Update to v{_available.Version.ToString(3)}";
+                _update.Visible = true;
+            }
+            else if (userAsked)
+                MessageBox.Show(this, $"You have the latest version (v{Updater.Current.ToString(3)}).", Text);
+        }
+        catch (Exception ex)
+        {
+            if (userAsked) MessageBox.Show(this, "Couldn't check for updates:\n" + ex.Message, Text);
+        }
+        finally { _checkUpdates.Enabled = true; }
+    }
+
+    async Task InstallUpdate()
+    {
+        if (_available == null) return;
+        if (_applied != null)
+        {
+            MessageBox.Show(this, "Finish your Star Citizen session first. The update can install once your bindings are back to normal.", Text);
+            return;
+        }
+        if (_dirty && !SaveProfile()) return;
+        _update.Enabled = false;
+        _update.Text = "Downloading...";
+        try
+        {
+            await Updater.DownloadAndStageAsync(_available);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Windows won't let Joystick Keeper replace itself in this folder. Move it to your Desktop or Documents, or run it as administrator.", Text);
+            _update.Enabled = true; _update.Text = $"Update to v{_available.Version.ToString(3)}";
+            return;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "The update didn't download:\n" + ex.Message, Text);
+            _update.Enabled = true; _update.Text = $"Update to v{_available.Version.ToString(3)}";
+            return;
+        }
+        _dirty = false;
+        Close(); // The update script waits for this process to exit, swaps the exe, and reopens it.
     }
 
     void UpdateLaunchUi(string? message = null)

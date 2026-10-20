@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>JoystickKeeper</AssemblyName>
     <RootNamespace>JoystickKeeper</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Vortice.DirectInput" Version="3.8.3" />
