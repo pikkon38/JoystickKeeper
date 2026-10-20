@@ -25,7 +25,7 @@ public sealed class MainForm : Form
     readonly ComboBox _scFile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 560 };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
     readonly Label _launchState = new() { AutoSize = true, Padding = new Padding(10, 14, 0, 0), Font = new Font("Segoe UI", 10f) };
-    readonly Button _launch = new() { Text = "Fix bindings && open RSI Launcher", Width = 300, Height = 44, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
+    readonly Button _launch = new() { Text = "Fix bindings && open RSI Launcher", AutoSize = true, MinimumSize = new Size(300, 44), Padding = new Padding(10, 0, 10, 0), Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
     readonly Button _restore = new() { Text = "Put bindings back now", AutoSize = true, Height = 44, Visible = false };
     readonly Button _update = new() { AutoSize = true, Height = 44, Visible = false, BackColor = Color.FromArgb(198, 239, 206) };
     readonly LinkLabel _checkUpdates = new() { Text = "Check for updates", AutoSize = true, Dock = DockStyle.Right, Padding = new Padding(0, 6, 0, 0) };
@@ -59,6 +59,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             AutoSize = false,
+            UseMnemonic = false,
             Height = 46,
             Padding = new Padding(10, 6, 10, 0),
             Text = "Move a stick or press a button and its row lights up green. \"Your slot\" is the js number your bindings were made with. " +
