@@ -20,77 +20,127 @@ public sealed class MainForm : Form
     AppliedFix? _applied;
 
     readonly DataGridView _grid = new();
-    readonly ComboBox _scFile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 560 };
-    readonly Label _status = new() { AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
-    readonly Label _launchState = new() { AutoSize = true, Padding = new Padding(10, 14, 0, 0), Font = new Font("Segoe UI", 10f) };
-    readonly Button _apply = new() { Text = "Update bindings", AutoSize = true, MinimumSize = new Size(300, 44), Padding = new Padding(10, 0, 10, 0), Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
-    readonly Button _restore = new() { Text = "Reset to saved order", AutoSize = true, Height = 44, Visible = false };
-    readonly Button _openRsi = new() { Text = "Open RSI Launcher", AutoSize = true, Height = 44 };
-    readonly Button _update = new() { AutoSize = true, Height = 44, Visible = false, BackColor = Color.FromArgb(198, 239, 206) };
-    readonly LinkLabel _checkUpdates = new() { Text = "Check for updates", AutoSize = true, Dock = DockStyle.Right, Padding = new Padding(0, 6, 0, 0) };
+    readonly ComboBox _scFile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 520, Margin = new Padding(0, 4, 12, 0) };
+    readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Muted, Anchor = AnchorStyles.Left };
+    readonly Label _launchState = new() { AutoSize = true, ForeColor = Theme.Muted, Font = Theme.Ui(10f), Margin = new Padding(8, 9, 0, 0) };
+    readonly Button _apply = Theme.Button("Update bindings", primary: true);
+    readonly Button _restore = Theme.Button("Reset to saved order");
+    readonly Button _openRsi = Theme.Button("Open RSI Launcher");
+    readonly Button _update = Theme.Button("Update", primary: true);
+    readonly LinkLabel _checkUpdates = new()
+    {
+        Text = "Check for updates", AutoSize = true, Anchor = AnchorStyles.Right,
+        LinkColor = Theme.Accent, ActiveLinkColor = Theme.Text, LinkBehavior = LinkBehavior.HoverUnderline,
+    };
     UpdateInfo? _available;
-    readonly Button _import = new() { Text = "Fill in from Star Citizen bindings", AutoSize = true };
+    readonly Button _import = Theme.Button("Fill in from Star Citizen bindings");
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 50 };
     readonly System.Windows.Forms.Timer _rescanSoon = new() { Interval = 1500 };
 
     public MainForm()
     {
-        Text = $"Joystick Keeper v{Updater.Current.ToString(3)}";
-        Width = 1180;
-        Height = 600;
-        MinimumSize = new Size(900, 450);
+        Text = "Joystick Keeper";
+        Width = 1200;
+        Height = 760;
+        MinimumSize = new Size(940, 560);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9.5f);
+        BackColor = Theme.Bg;
+        ForeColor = Theme.Text;
+        Font = Theme.Ui(9.5f);
+        _restore.Visible = false;
+        _update.Visible = false;
 
         BuildGrid();
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 8, 8, 0), WrapContents = true };
-        var rescan = new Button { Text = "Rescan", AutoSize = true };
-        rescan.Click += (_, _) => Rescan();
-        _import.Click += (_, _) => ImportFromStarCitizen(showSummary: true);
-        var save = new Button { Text = "Save setup", AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
-        save.Click += (_, _) => SaveProfile();
-        top.Controls.AddRange(new Control[] { rescan, _import, save,
-            new Label { Text = "Bindings file:", AutoSize = true, Padding = new Padding(12, 6, 0, 0) }, _scFile });
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(20, 16, 20, 10), BackColor = Theme.Bg };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // header
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // devices
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // star citizen
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // actions
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // footer
 
-        var help = new Label
+        // Header: title and one line on what the app does, update button on the right.
+        var header = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 16) };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var titles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        titles.Controls.Add(new Label { Text = "Joystick Keeper", AutoSize = true, Font = Theme.Ui(20f, FontStyle.Bold), Margin = Padding.Empty });
+        titles.Controls.Add(new Label
         {
-            Dock = DockStyle.Top,
-            AutoSize = false,
-            UseMnemonic = false,
-            Height = 46,
-            Padding = new Padding(10, 6, 10, 0),
-            Text = "Move a stick or press a button and its row lights up green. \"Your slot\" is the js number your bindings were made with. " +
-                   "Pick a slot for each device and click Save setup. Whenever your devices were plugged in differently, click Update bindings before starting the game.",
-        };
+            Text = "Your joysticks keep their bindings, whatever order you plug them in.", AutoSize = true,
+            ForeColor = Theme.Muted, Font = Theme.Ui(10f), Margin = new Padding(2, 2, 0, 0),
+        });
+        header.Controls.Add(titles, 0, 0);
+        _update.Anchor = AnchorStyles.Right;
+        header.Controls.Add(_update, 1, 0);
 
-        var launchBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 62, Padding = new Padding(8, 8, 8, 0) };
-        _apply.Click += (_, _) => UpdateBindings();
-        _restore.Click += (_, _) => ResetBindings("Bindings put back to your saved order.");
+        // Devices card.
+        var devices = new Card { Dock = DockStyle.Fill };
+        var devTop = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Margin = Padding.Empty, Padding = new Padding(0, 0, 0, 8) };
+        devTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        devTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var devText = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        devText.Controls.Add(Theme.Caption("Devices"));
+        devText.Controls.Add(new Label
+        {
+            Text = "Move a stick or press a button to light up its row. Set \"Your slot\" to the js number your bindings were made with, then Save setup.",
+            AutoSize = true, MaximumSize = new Size(700, 0), ForeColor = Theme.Muted, UseMnemonic = false, Margin = Padding.Empty,
+        });
+        var devButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Right | AnchorStyles.Top };
+        var rescan = Theme.Button("Rescan");
+        rescan.Click += (_, _) => Rescan();
+        var save = Theme.Button("Save setup");
+        save.Margin = Padding.Empty;
+        save.Click += (_, _) => SaveProfile();
+        devButtons.Controls.AddRange(new Control[] { rescan, save });
+        devTop.Controls.Add(devText, 0, 0);
+        devTop.Controls.Add(devButtons, 1, 0);
+        devices.Controls.Add(_grid);
+        devices.Controls.Add(devTop);
+
+        // Star Citizen card: which bindings file, and the extras that only apply to that game.
+        var sc = new Card { Dock = DockStyle.Top, AutoSize = true };
+        var scFlow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+        Theme.StyleCombo(_scFile);
+        _import.Click += (_, _) => ImportFromStarCitizen(showSummary: true);
         _openRsi.Click += (_, _) => OpenRsiLauncher();
+        scFlow.Controls.AddRange(new Control[] { _scFile, _import, _openRsi });
+        sc.Controls.Add(scFlow);
+        sc.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 4 });
+        sc.Controls.Add(Theme.Caption("Star Citizen bindings file"));
+        sc.Controls[^1].Dock = DockStyle.Top;
+
+        // Actions.
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 8) };
+        _apply.MinimumSize = new Size(220, 44);
+        _apply.Click += (_, _) => UpdateBindings();
+        _restore.MinimumSize = new Size(0, 44);
+        _restore.Click += (_, _) => ResetBindings("Bindings put back to your saved order.");
+        actions.Controls.AddRange(new Control[] { _apply, _restore, _launchState });
+
+        // Footer.
+        var footer = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.Controls.Add(_status, 0, 0);
+        var right = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Right };
+        right.Controls.Add(new Label { Text = $"v{Updater.Current.ToString(3)}", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 12, 0) });
+        right.Controls.Add(_checkUpdates);
+        footer.Controls.Add(right, 1, 0);
         _update.Click += async (_, _) => await InstallUpdate();
         _checkUpdates.LinkClicked += async (_, _) => await CheckForUpdates(userAsked: true);
-        launchBar.Controls.AddRange(new Control[] { _apply, _restore, _openRsi, _update, _launchState });
 
-        // Grow the help line to fit its text at any window width or display scaling.
-        void FitHelp() => help.Height = TextRenderer.MeasureText(help.Text, help.Font,
-            new Size(Math.Max(100, help.ClientSize.Width - help.Padding.Horizontal), 0), TextFormatFlags.WordBreak).Height + help.Padding.Vertical + 4;
-        help.Resize += (_, _) => FitHelp();
-        help.FontChanged += (_, _) => FitHelp();
-
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(10, 0, 10, 0) };
-        bottom.Controls.Add(_status);
-        bottom.Controls.Add(_checkUpdates);
-
-        Controls.Add(_grid);
-        Controls.Add(help);
-        Controls.Add(top);
-        Controls.Add(launchBar);
-        Controls.Add(bottom);
+        root.Controls.Add(header, 0, 0);
+        root.Controls.Add(devices, 0, 1);
+        root.Controls.Add(sc, 0, 2);
+        root.Controls.Add(actions, 0, 3);
+        root.Controls.Add(footer, 0, 4);
+        Controls.Add(root);
 
         _poll.Tick += (_, _) => PollActivity();
         _rescanSoon.Tick += (_, _) => { _rescanSoon.Stop(); Rescan(); };
 
+        HandleCreated += (_, _) => Theme.DarkTitleBar(this);
         Load += (_, _) => OnFirstLoad();
         FormClosing += OnClosing;
     }
@@ -121,8 +171,7 @@ public sealed class MainForm : Form
         _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-        _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        _grid.BackgroundColor = SystemColors.Window;
+        Theme.StyleGrid(_grid);
         _grid.EditMode = DataGridViewEditMode.EditOnEnter;
 
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Now", HeaderText = "Game sees it as", ReadOnly = true, FillWeight = 70 });
@@ -173,7 +222,7 @@ public sealed class MainForm : Form
             int i = _grid.Rows.Add(d.GameSlot > 0 ? $"js{d.GameSlot}" : "Gamepad (no js slot)", d.ProductName, d.VidPid, d.Kind,
                 saved?.FriendlyName ?? "", SlotText(saved?.StarCitizenSlot ?? 0), "");
             _grid.Rows[i].Tag = d.Key;
-            if (d.GameSlot == 0) _grid.Rows[i].DefaultCellStyle.ForeColor = SystemColors.GrayText;
+            if (d.GameSlot == 0) _grid.Rows[i].DefaultCellStyle.ForeColor = Theme.Muted;
             OpenDevice(d);
         }
         // Devices in the saved setup that aren't plugged in.
@@ -207,14 +256,15 @@ public sealed class MainForm : Form
         int want = SlotNumber(r.Cells["Slot"].Value);
         string text;
         Color color;
-        if (dev == null) { text = want > 0 ? "Not plugged in" : "Not plugged in (not used)"; color = want > 0 ? Color.Firebrick : SystemColors.GrayText; }
-        else if (dev.GameSlot == 0) { text = want > 0 ? "Game treats this as a gamepad, it can't have a js slot" : "Ignored by the game's joystick list"; color = want > 0 ? Color.Firebrick : SystemColors.GrayText; }
-        else if (want == 0) { text = "Connected, not used"; color = SystemColors.GrayText; }
+        if (dev == null) { text = want > 0 ? "Not plugged in" : "Not plugged in (not used)"; color = want > 0 ? Theme.Bad : Theme.Muted; }
+        else if (dev.GameSlot == 0) { text = want > 0 ? "Game treats this as a gamepad, it can't have a js slot" : "Ignored by the game's joystick list"; color = want > 0 ? Theme.Bad : Theme.Muted; }
+        else if (want == 0) { text = "Connected, not used"; color = Theme.Muted; }
         else if (FileSlot(want) == dev.GameSlot)
-        { text = want == dev.GameSlot ? "Bindings match" : $"Bindings match (moved to js{dev.GameSlot})"; color = Color.ForestGreen; }
-        else { text = $"Windows gave it js{dev.GameSlot}, click Update bindings"; color = Color.DarkOrange; }
+        { text = want == dev.GameSlot ? "Bindings match" : $"Bindings match (moved to js{dev.GameSlot})"; color = Theme.Good; }
+        else { text = $"Windows gave it js{dev.GameSlot}, click Update bindings"; color = Theme.Accent; }
         r.Cells["State"].Value = text;
         r.Cells["State"].Style.ForeColor = color;
+        r.Cells["State"].Style.SelectionForeColor = color;
     }
 
     /// <summary>The js number the bindings file uses right now for a home slot.</summary>
@@ -230,7 +280,7 @@ public sealed class MainForm : Form
         parts.Add(_dirty ? "Unsaved changes" :
             File.Exists(Profile.FilePath) ? $"Setup saved {_profile.SavedAt:g}" : "No setup saved yet");
         _status.Text = string.Join("   ·   ", parts);
-        _status.ForeColor = dupes.Count > 0 ? Color.Firebrick : SystemColors.ControlText;
+        _status.ForeColor = dupes.Count > 0 ? Theme.Bad : Theme.Muted;
     }
 
     // ---------- live input, so you can tell which physical stick is which ----------
@@ -283,7 +333,7 @@ public sealed class MainForm : Form
         foreach (DataGridViewRow r in _grid.Rows)
         {
             bool active = _lastActivity.TryGetValue((string)r.Tag!, out var t) && (now - t).TotalMilliseconds < 1200;
-            var bg = active ? Color.FromArgb(198, 239, 206) : SystemColors.Window;
+            var bg = active ? Theme.Active : Theme.Surface;
             if (r.DefaultCellStyle.BackColor != bg) r.DefaultCellStyle.BackColor = bg;
         }
     }
