@@ -20,7 +20,7 @@ public sealed class MainForm : Form
     AppliedFix? _applied;
 
     readonly DataGridView _grid = new();
-    readonly ComboBox _scFile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 520, Margin = new Padding(0, 4, 12, 0) };
+    readonly DarkDropDown _scFile = new() { Width = 560, Margin = new Padding(0, 0, 12, 0) };
     readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Muted, Anchor = AnchorStyles.Left };
     readonly Label _launchState = new() { AutoSize = true, ForeColor = Theme.Muted, Font = Theme.Ui(10f), Margin = new Padding(8, 9, 0, 0) };
     readonly Button _apply = Theme.Button("Update bindings", primary: true);
@@ -101,7 +101,6 @@ public sealed class MainForm : Form
         // Star Citizen card: which bindings file, and the extras that only apply to that game.
         var sc = new Card { Dock = DockStyle.Top, AutoSize = true };
         var scFlow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = Padding.Empty };
-        Theme.StyleCombo(_scFile);
         _import.Click += (_, _) => ImportFromStarCitizen(showSummary: true);
         _openRsi.Click += (_, _) => OpenRsiLauncher();
         scFlow.Controls.AddRange(new Control[] { _scFile, _import, _openRsi });
@@ -153,6 +152,7 @@ public sealed class MainForm : Form
             files.Insert(0, _profile.ActionMapsPath);
         foreach (var f in files) _scFile.Items.Add(f);
         int saved = _profile.ActionMapsPath == null ? -1 : _scFile.Items.IndexOf(_profile.ActionMapsPath);
+        _scFile.Invalidate();
         if (_scFile.Items.Count > 0) _scFile.SelectedIndex = Math.Max(0, saved);
 
         _applied = AppliedFix.Load();
@@ -179,10 +179,8 @@ public sealed class MainForm : Form
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id", HeaderText = "VID:PID", ReadOnly = true, FillWeight = 50 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Kind", HeaderText = "Type", ReadOnly = true, FillWeight = 45 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Your name for it", FillWeight = 100 });
-        var slot = new DataGridViewComboBoxColumn { Name = "Slot", HeaderText = "Your slot", FillWeight = 55, FlatStyle = FlatStyle.Flat };
-        slot.Items.Add(NoSlot);
-        for (int i = 1; i <= MaxSlots; i++) slot.Items.Add($"js{i}");
-        _grid.Columns.Add(slot);
+        // Slot is picked from a dark menu rather than the system drop-down, which can't be themed.
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Slot", HeaderText = "Your slot", ReadOnly = true, FillWeight = 55 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "State", HeaderText = "Status", ReadOnly = true, FillWeight = 140 });
 
         _grid.CellValueChanged += (_, e) =>
@@ -192,12 +190,35 @@ public sealed class MainForm : Form
             UpdateRowState(_grid.Rows[e.RowIndex]);
             UpdateStatusBar();
         };
-        _grid.CurrentCellDirtyStateChanged += (_, _) =>
+        _grid.CellPainting += (_, e) =>
         {
-            if (_grid.IsCurrentCellDirty && _grid.CurrentCell is DataGridViewComboBoxCell)
-                _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            if (e.RowIndex < 0 || _grid.Columns[e.ColumnIndex].Name != "Slot") return;
+            e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+            Theme.Chevron(e.Graphics!, new Rectangle(e.CellBounds.Right - 28, e.CellBounds.Y, 20, e.CellBounds.Height), Theme.Muted);
+            e.Handled = true;
         };
+        _grid.CellClick += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "Slot") ShowSlotMenu(_grid.Rows[e.RowIndex], e.ColumnIndex);
+        };
+        _grid.CellMouseEnter += (_, e) =>
+            _grid.Cursor = e.RowIndex >= 0 && e.ColumnIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "Slot" ? Cursors.Hand : Cursors.Default;
         _grid.DataError += (_, e) => e.Cancel = true;
+    }
+
+    void ShowSlotMenu(DataGridViewRow row, int column)
+    {
+        var current = row.Cells["Slot"].Value as string ?? NoSlot;
+        var menu = Theme.Menu();
+        foreach (var choice in new[] { NoSlot }.Concat(Enumerable.Range(1, MaxSlots).Select(i => $"js{i}")))
+        {
+            var item = new ToolStripMenuItem(choice) { ForeColor = choice == current ? Theme.Accent : Theme.Text };
+            item.Click += (_, _) => row.Cells["Slot"].Value = choice;
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        var r = _grid.GetCellDisplayRectangle(column, row.Index, false);
+        menu.Show(_grid, new Point(r.Left, r.Bottom));
     }
 
     string? SelectedActionMaps() => _scFile.SelectedItem is string s && File.Exists(s) ? s : null;

@@ -42,11 +42,38 @@ static class Theme
         return b;
     }
 
-    public static void StyleCombo(ComboBox c)
+    /// <summary>A dark popup menu (the system drop-down lists can't be fully themed).</summary>
+    public static ContextMenuStrip Menu() => new()
     {
-        c.FlatStyle = FlatStyle.Flat;
-        c.BackColor = Raised;
-        c.ForeColor = Text;
+        Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors()) { RoundedEdges = false },
+        BackColor = Raised, ForeColor = Text, Font = Ui(10f), ShowImageMargin = false, ShowCheckMargin = false,
+    };
+
+    /// <summary>Draws a small down chevron centred in <paramref name="r"/>.</summary>
+    public static void Chevron(Graphics g, Rectangle r, Color color)
+    {
+        int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+        using var pen = new Pen(color, 1.6f);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.DrawLines(pen, new[] { new Point(cx - 4, cy - 2), new Point(cx, cy + 2), new Point(cx + 4, cy - 2) });
+    }
+
+    sealed class DarkMenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Raised;
+        public override Color MenuBorder => Line;
+        public override Color MenuItemBorder => Line;
+        public override Color MenuItemSelected => Line;
+        public override Color MenuItemSelectedGradientBegin => Line;
+        public override Color MenuItemSelectedGradientEnd => Line;
+        public override Color ImageMarginGradientBegin => Raised;
+        public override Color ImageMarginGradientMiddle => Raised;
+        public override Color ImageMarginGradientEnd => Raised;
+        public override Color CheckBackground => Raised;
+        public override Color CheckSelectedBackground => Line;
+        public override Color CheckPressedBackground => Line;
+        public override Color SeparatorDark => Line;
+        public override Color SeparatorLight => Line;
     }
 
     public static void StyleGrid(DataGridView g)
@@ -120,5 +147,69 @@ sealed class Card : Panel
         p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         p.CloseFigure();
         return p;
+    }
+}
+
+/// <summary>A dark drop-down list: shows the selected item with a chevron and opens a dark menu on click.</summary>
+sealed class DarkDropDown : Control
+{
+    public List<string> Items { get; } = new();
+    int _selected = -1;
+    bool _hover;
+
+    public event EventHandler? SelectedIndexChanged;
+
+    public DarkDropDown()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        BackColor = Theme.Raised;
+        ForeColor = Theme.Text;
+        Font = Theme.Ui(9.5f);
+        Cursor = Cursors.Hand;
+        Height = 36;
+    }
+
+    public int SelectedIndex
+    {
+        get => _selected;
+        set
+        {
+            if (value == _selected) return;
+            _selected = value;
+            Invalidate();
+            SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public string? SelectedItem => _selected >= 0 && _selected < Items.Count ? Items[_selected] : null;
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnClick(EventArgs e)
+    {
+        base.OnClick(e);
+        if (Items.Count == 0) return;
+        var menu = Theme.Menu();
+        for (int i = 0; i < Items.Count; i++)
+        {
+            int index = i;
+            var item = new ToolStripMenuItem(Items[i]) { ForeColor = i == _selected ? Theme.Accent : Theme.Text };
+            item.Click += (_, _) => SelectedIndex = index;
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(this, new Point(0, Height));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(_hover ? Theme.Line : BackColor);
+        using (var pen = new Pen(Theme.Line)) g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        var text = SelectedItem ?? "No file found";
+        TextRenderer.DrawText(g, text, Font, new Rectangle(10, 0, Width - 40, Height),
+            SelectedItem == null ? Theme.Muted : ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.PathEllipsis | TextFormatFlags.SingleLine);
+        Theme.Chevron(g, new Rectangle(Width - 30, 0, 24, Height), Theme.Muted);
     }
 }
