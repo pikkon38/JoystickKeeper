@@ -33,7 +33,8 @@ Or download `JoystickKeeper.exe` and run it from any folder.
 
 ## Releases and updates
 
-Pushing a tag like `v0.5.0` makes GitHub Actions run the tests, build `JoystickKeeper.exe` with that version, and
-attach it and `JoystickKeeper-Setup.exe` to a new release. The app checks the latest release when it starts; if it's newer, an
+The release version is the `<Version>` in `src/JoystickKeeper/JoystickKeeper.csproj`. When a change that bumps it is
+merged into `main`, GitHub Actions runs the tests, builds `JoystickKeeper.exe` and `JoystickKeeper-Setup.exe`, and
+publishes them as release `v<Version>`. The app checks the latest release when it starts; if it's newer, an
 "Update to vX" button appears. Clicking it downloads the new exe, closes the app, swaps the file and reopens it.
 Updating is blocked while a Star Citizen session has the bindings remapped.
