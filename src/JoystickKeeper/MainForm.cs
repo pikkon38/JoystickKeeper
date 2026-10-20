@@ -107,7 +107,7 @@ public sealed class MainForm : Form
         scFlow.Controls.AddRange(new Control[] { _scFile, _import, _openRsi });
         sc.Controls.Add(scFlow);
         sc.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 4 });
-        sc.Controls.Add(Theme.Caption("Star Citizen bindings file"));
+        sc.Controls.Add(Theme.Caption("Star Citizen"));
         sc.Controls[^1].Dock = DockStyle.Top;
 
         // Actions.
