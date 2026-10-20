@@ -6,9 +6,9 @@ namespace JoystickKeeper;
 /// <summary>
 /// Renumbers the js slots in Star Citizen's actionmaps.xml.
 ///
-/// The file is kept in the "home" numbering from your saved setup while the game is closed. Before launch it is
-/// remapped home -> current Windows order, and after the game exits it is remapped back, so bindings you change
-/// in-game are kept and the file at rest always matches your saved setup.
+/// Your saved setup says which js number each device's bindings were made with (the "home" numbering). Update bindings
+/// remaps the file home -> today's Windows order and remembers that mapping, so the next update can work out the
+/// file's current numbering, keeping anything rebound in-game, and "Reset" can put it back to the home numbering.
 /// </summary>
 public static class BindingsFixer
 {
@@ -69,10 +69,14 @@ public static class BindingsFixer
         return (map, missing);
     }
 
+    /// <summary>First <paramref name="a"/> then <paramref name="b"/>: x -> a[x] -> b[a[x]].</summary>
+    public static Dictionary<int, int> Compose(IReadOnlyDictionary<int, int> a, IReadOnlyDictionary<int, int> b) =>
+        a.ToDictionary(kv => kv.Key, kv => b.TryGetValue(kv.Value, out var z) ? z : kv.Value);
+
     public static bool IsIdentity(IReadOnlyDictionary<int, int> map) => map.All(kv => kv.Key == kv.Value);
 }
 
-/// <summary>Remembers that the bindings file is currently remapped, so it can be put back even after a crash or reboot.</summary>
+/// <summary>Remembers how the bindings file is currently numbered (home slot -> js number in the file).</summary>
 public sealed class AppliedFix
 {
     public string ActionMapsPath { get; set; } = "";
@@ -88,22 +92,47 @@ public sealed class AppliedFix
         catch { return null; }
     }
 
-    /// <summary>Backs up the file, remaps it home -> current, and records what was done.</summary>
-    public static AppliedFix Apply(string actionMapsPath, Dictionary<int, int> map)
+    /// <summary>
+    /// Renumbers the file so home slots land on <paramref name="target"/> (home -> today's js number), starting from
+    /// however <paramref name="current"/> left it. Backs up first. Returns the new state, or null when the file is
+    /// back in the home numbering.
+    /// </summary>
+    public static AppliedFix? Update(string actionMapsPath, AppliedFix? current, Dictionary<int, int> target)
     {
+        if (current != null && !string.Equals(current.ActionMapsPath, actionMapsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            current.Restore();
+            current = null;
+        }
+        var step = current == null ? target : BindingsFixer.Compose(BindingsFixer.Invert(current.Map), target);
+        var fix = BindingsFixer.IsIdentity(target) ? null : new AppliedFix { ActionMapsPath = actionMapsPath, Map = target, AppliedAt = DateTime.Now };
+        if (BindingsFixer.IsIdentity(step))
+        {
+            Save(fix);
+            return fix;
+        }
+
         Directory.CreateDirectory(BackupFolder);
         var text = File.ReadAllText(actionMapsPath);
         File.WriteAllText(Path.Combine(BackupFolder, $"actionmaps-{DateTime.Now:yyyyMMdd-HHmmss}.xml"), text);
         PruneBackups();
 
-        var fix = new AppliedFix { ActionMapsPath = actionMapsPath, Map = map, AppliedAt = DateTime.Now };
-        // Record first: if writing the bindings fails half way, a later Restore still knows what to undo.
-        Directory.CreateDirectory(Profile.Folder);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(fix));
-        try { WriteAtomic(actionMapsPath, BindingsFixer.Remap(text, map)); }
-        catch { File.Delete(FilePath); throw; }
+        // Record first: if writing the bindings fails half way, the old state is put back so it still describes the file.
+        Save(fix);
+        try { WriteAtomic(actionMapsPath, BindingsFixer.Remap(text, step)); }
+        catch { Save(current); throw; }
         return fix;
     }
+
+    static void Save(AppliedFix? fix)
+    {
+        Directory.CreateDirectory(Profile.Folder);
+        if (fix == null) File.Delete(FilePath);
+        else File.WriteAllText(FilePath, JsonSerializer.Serialize(fix));
+    }
+
+    /// <summary>The home slot a js number in the file stands for.</summary>
+    public int HomeSlot(int fileSlot) => Map.FirstOrDefault(kv => kv.Value == fileSlot).Key is var k && k != 0 ? k : fileSlot;
 
     /// <summary>Puts the file back to the home numbering. Keeps any bindings changed in-game meanwhile.</summary>
     public void Restore()

@@ -16,23 +16,21 @@ public sealed class MainForm : Form
     bool _dirty;
     bool _loading;
 
-    // Launch tracking: set while the bindings file is remapped for the current device order.
+    // How the bindings file is numbered right now (null = your saved order).
     AppliedFix? _applied;
-    bool _gameSeen;
-    DateTime _launchedAt;
 
     readonly DataGridView _grid = new();
     readonly ComboBox _scFile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 560 };
     readonly Label _status = new() { AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
     readonly Label _launchState = new() { AutoSize = true, Padding = new Padding(10, 14, 0, 0), Font = new Font("Segoe UI", 10f) };
-    readonly Button _launch = new() { Text = "Fix bindings && open RSI Launcher", Width = 300, Height = 44, Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
-    readonly Button _restore = new() { Text = "Put bindings back now", AutoSize = true, Height = 44, Visible = false };
+    readonly Button _apply = new() { Text = "Update bindings", AutoSize = true, MinimumSize = new Size(300, 44), Padding = new Padding(10, 0, 10, 0), Font = new Font("Segoe UI", 11f, FontStyle.Bold) };
+    readonly Button _restore = new() { Text = "Reset to saved order", AutoSize = true, Height = 44, Visible = false };
+    readonly Button _openRsi = new() { Text = "Open RSI Launcher", AutoSize = true, Height = 44 };
     readonly Button _update = new() { AutoSize = true, Height = 44, Visible = false, BackColor = Color.FromArgb(198, 239, 206) };
     readonly LinkLabel _checkUpdates = new() { Text = "Check for updates", AutoSize = true, Dock = DockStyle.Right, Padding = new Padding(0, 6, 0, 0) };
     UpdateInfo? _available;
     readonly Button _import = new() { Text = "Fill in from Star Citizen bindings", AutoSize = true };
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 50 };
-    readonly System.Windows.Forms.Timer _watch = new() { Interval = 2000 };
     readonly System.Windows.Forms.Timer _rescanSoon = new() { Interval = 1500 };
 
     public MainForm()
@@ -59,18 +57,20 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             AutoSize = false,
+            UseMnemonic = false,
             Height = 46,
             Padding = new Padding(10, 6, 10, 0),
             Text = "Move a stick or press a button and its row lights up green. \"Your slot\" is the js number your bindings were made with. " +
-                   "Click Save setup once, then always start Star Citizen with Fix bindings & open RSI Launcher.",
+                   "Pick a slot for each device and click Save setup. Whenever your devices were plugged in differently, click Update bindings before starting the game.",
         };
 
         var launchBar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 62, Padding = new Padding(8, 8, 8, 0) };
-        _launch.Click += (_, _) => Launch();
-        _restore.Click += (_, _) => RestoreBindings("Bindings put back to your saved setup.");
+        _apply.Click += (_, _) => UpdateBindings();
+        _restore.Click += (_, _) => ResetBindings("Bindings put back to your saved order.");
+        _openRsi.Click += (_, _) => OpenRsiLauncher();
         _update.Click += async (_, _) => await InstallUpdate();
         _checkUpdates.LinkClicked += async (_, _) => await CheckForUpdates(userAsked: true);
-        launchBar.Controls.AddRange(new Control[] { _launch, _restore, _update, _launchState });
+        launchBar.Controls.AddRange(new Control[] { _apply, _restore, _openRsi, _update, _launchState });
 
         // Grow the help line to fit its text at any window width or display scaling.
         void FitHelp() => help.Height = TextRenderer.MeasureText(help.Text, help.Font,
@@ -89,7 +89,6 @@ public sealed class MainForm : Form
         Controls.Add(bottom);
 
         _poll.Tick += (_, _) => PollActivity();
-        _watch.Tick += (_, _) => WatchGame();
         _rescanSoon.Tick += (_, _) => { _rescanSoon.Stop(); Rescan(); };
 
         Load += (_, _) => OnFirstLoad();
@@ -106,17 +105,8 @@ public sealed class MainForm : Form
         int saved = _profile.ActionMapsPath == null ? -1 : _scFile.Items.IndexOf(_profile.ActionMapsPath);
         if (_scFile.Items.Count > 0) _scFile.SelectedIndex = Math.Max(0, saved);
 
-        // A previous session left the bindings remapped (game still open, or the app was closed early).
         _applied = AppliedFix.Load();
-        if (_applied != null)
-        {
-            if (GameLauncher.IsGameRunning()) { _gameSeen = true; _watch.Start(); }
-            else RestoreBindings("Your bindings were still set for the last session, so they've been put back.");
-        }
-
         Rescan();
-        if (_profile.Devices.Count == 0 && SelectedActionMaps() != null)
-            ImportFromStarCitizen(showSummary: false);
         UpdateLaunchUi();
         _poll.Start();
         _ = CheckForUpdates(userAsked: false);
@@ -220,11 +210,15 @@ public sealed class MainForm : Form
         if (dev == null) { text = want > 0 ? "Not plugged in" : "Not plugged in (not used)"; color = want > 0 ? Color.Firebrick : SystemColors.GrayText; }
         else if (dev.GameSlot == 0) { text = want > 0 ? "Game treats this as a gamepad, it can't have a js slot" : "Ignored by the game's joystick list"; color = want > 0 ? Color.Firebrick : SystemColors.GrayText; }
         else if (want == 0) { text = "Connected, not used"; color = SystemColors.GrayText; }
-        else if (want == dev.GameSlot) { text = "Already in the right slot"; color = Color.ForestGreen; }
-        else { text = $"Windows moved it to js{dev.GameSlot}, will be fixed at launch"; color = Color.DarkOrange; }
+        else if (FileSlot(want) == dev.GameSlot)
+        { text = want == dev.GameSlot ? "Bindings match" : $"Bindings match (moved to js{dev.GameSlot})"; color = Color.ForestGreen; }
+        else { text = $"Windows gave it js{dev.GameSlot}, click Update bindings"; color = Color.DarkOrange; }
         r.Cells["State"].Value = text;
         r.Cells["State"].Style.ForeColor = color;
     }
+
+    /// <summary>The js number the bindings file uses right now for a home slot.</summary>
+    int FileSlot(int homeSlot) => _applied != null && _applied.Map.TryGetValue(homeSlot, out var n) ? n : homeSlot;
 
     void UpdateStatusBar()
     {
@@ -305,11 +299,6 @@ public sealed class MainForm : Form
 
     void ImportFromStarCitizen(bool showSummary)
     {
-        if (_applied != null)
-        {
-            MessageBox.Show(this, "Your bindings are set for the game that's running. Try again after you close Star Citizen.", Text);
-            return;
-        }
         var path = SelectedActionMaps();
         if (path == null)
         {
@@ -328,9 +317,11 @@ public sealed class MainForm : Form
                 ((string)r.Cells["Id"].Value).Equals($"{j.VendorId:X4}:{j.ProductId:X4}", StringComparison.OrdinalIgnoreCase));
             if (row == null) { lines.Add($"js{j.Instance}: {j.ProductName} (not plugged in, skipped)"); continue; }
             used.Add(row);
-            row.Cells["Slot"].Value = SlotText(j.Instance);
+            // The file may be renumbered for today's order; slots are kept in your saved numbering.
+            int home = HomeSlot(j.Instance);
+            row.Cells["Slot"].Value = SlotText(home);
             if (string.IsNullOrWhiteSpace(row.Cells["Name"].Value as string)) row.Cells["Name"].Value = j.ProductName;
-            lines.Add($"js{j.Instance}: {j.ProductName}");
+            lines.Add($"js{home}: {j.ProductName}");
         }
         _dirty = true;
         UpdateStatusBar();
@@ -338,6 +329,8 @@ public sealed class MainForm : Form
             MessageBox.Show(this, "Your bindings expect:\n\n" + (lines.Count > 0 ? string.Join("\n", lines) : "(no joysticks listed)") +
                 "\n\nCheck the slots look right, then click Save setup.", Text);
     }
+
+    int HomeSlot(int fileSlot) => _applied?.HomeSlot(fileSlot) ?? fileSlot;
 
     bool SaveProfile()
     {
@@ -362,6 +355,10 @@ public sealed class MainForm : Form
             MessageBox.Show(this, "Two devices can't share a slot: " + string.Join(", ", dupes.Select(g => $"js{g.Key}")), Text);
             return false;
         }
+        // New slots mean a new saved numbering, so put the file back in the old one before switching.
+        bool slotsChanged = p.Devices.Any(d => (_profile.Find(d.Key)?.StarCitizenSlot ?? 0) != d.StarCitizenSlot) ||
+                            _profile.Devices.Any(d => d.StarCitizenSlot > 0 && p.Find(d.Key) == null);
+        if (_applied != null && slotsChanged && !ResetBindings("Bindings put back to your saved order before saving the new slots.")) return false;
         try { p.Save(); }
         catch (Exception ex) { MessageBox.Show(this, "Could not save:\n" + ex.Message, Text); return false; }
         _profile = p;
@@ -370,9 +367,9 @@ public sealed class MainForm : Form
         return true;
     }
 
-    // ---------- launch ----------
+    // ---------- update bindings ----------
 
-    void Launch()
+    void UpdateBindings()
     {
         if (_dirty)
         {
@@ -385,28 +382,48 @@ public sealed class MainForm : Form
         }
         if (GameLauncher.IsGameRunning())
         {
-            MessageBox.Show(this, "Star Citizen is already running. Close it first so the bindings can be set before it starts.", Text);
+            MessageBox.Show(this, "Close Star Citizen first. It rewrites the bindings file when it quits, which would undo the update.", Text);
             return;
         }
         var path = SelectedActionMaps();
         if (path == null)
         {
-            MessageBox.Show(this, "No Star Citizen bindings file was found, so there's nothing to fix. Start the game once and save your controls.", Text);
+            MessageBox.Show(this, "No Star Citizen bindings file was found, so there's nothing to update. Start the game once and save your controls.", Text);
             return;
         }
 
         Rescan();
         var (map, missing) = BindingsFixer.ComputeMap(_profile, _scanned);
         if (missing.Count > 0 &&
-            MessageBox.Show(this, "Not plugged in: " + string.Join(", ", missing) + "\n\nLaunch anyway?", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
+            MessageBox.Show(this, "Not plugged in: " + string.Join(", ", missing) + "\n\nUpdate the others anyway?", Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
             return;
 
         var mismatch = CheckFileMatchesProfile(path);
         if (mismatch != null &&
-            MessageBox.Show(this, mismatch + "\n\nIf you rebound your controls since saving, click Fill in from Star Citizen bindings and save again.\n\nLaunch anyway?",
+            MessageBox.Show(this, mismatch + "\n\nIf you rebound your controls since saving, click Fill in from Star Citizen bindings and save again.\n\nUpdate anyway?",
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
             return;
 
+        if (_profile.ActionMapsPath != path)
+        {
+            _profile.ActionMapsPath = path;
+            try { _profile.Save(); } catch { }
+        }
+
+        try { _applied = AppliedFix.Update(path, _applied, map); }
+        catch (UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Windows won't let Joystick Keeper change the bindings file. Right-click Joystick Keeper and choose Run as administrator, then try again.", Text);
+            return;
+        }
+        catch (Exception ex) { MessageBox.Show(this, "Could not update the bindings file:\n" + ex.Message, Text); return; }
+
+        Rescan();
+        UpdateLaunchUi(_applied == null ? "Bindings match your devices. Nothing needed moving." : $"Bindings updated for today's order: {Moves()}.");
+    }
+
+    void OpenRsiLauncher()
+    {
         var exe = GameLauncher.FindRsiLauncher(_profile.RsiLauncherPath);
         if (exe == null)
         {
@@ -414,37 +431,13 @@ public sealed class MainForm : Form
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             exe = dlg.FileName;
         }
-        if (_profile.RsiLauncherPath != exe || _profile.ActionMapsPath != path)
+        if (_profile.RsiLauncherPath != exe)
         {
             _profile.RsiLauncherPath = exe;
-            _profile.ActionMapsPath = path;
             try { _profile.Save(); } catch { }
         }
-
-        if (!BindingsFixer.IsIdentity(map))
-        {
-            try { _applied = AppliedFix.Apply(path, map); }
-            catch (UnauthorizedAccessException)
-            {
-                MessageBox.Show(this, "Windows won't let Joystick Keeper change the bindings file. Right-click Joystick Keeper and choose Run as administrator, then try again.", Text);
-                return;
-            }
-            catch (Exception ex) { MessageBox.Show(this, "Could not update the bindings file:\n" + ex.Message, Text); return; }
-        }
-
         try { GameLauncher.StartRsiLauncher(exe); }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, "Could not start the RSI Launcher:\n" + ex.Message, Text);
-            if (_applied != null) RestoreBindings("Bindings put back.");
-            return;
-        }
-
-        _gameSeen = false;
-        _launchedAt = DateTime.Now;
-        if (_applied != null) _watch.Start();
-        UpdateLaunchUi(_applied == null ? "Everything was already in the right slot. RSI Launcher started." : null);
-        WindowState = FormWindowState.Minimized;
+        catch (Exception ex) { MessageBox.Show(this, "Could not start the RSI Launcher:\n" + ex.Message, Text); }
     }
 
     /// <summary>Checks that the bindings file still lists the same devices in the same slots as the saved setup.</summary>
@@ -455,7 +448,7 @@ public sealed class MainForm : Form
             var inFile = StarCitizen.ReadJoysticks(path).Where(j => j.VendorId != 0 || j.ProductId != 0).ToList();
             foreach (var p in _profile.Devices.Where(d => d.StarCitizenSlot > 0))
             {
-                var j = inFile.FirstOrDefault(x => x.Instance == p.StarCitizenSlot);
+                var j = inFile.FirstOrDefault(x => HomeSlot(x.Instance) == p.StarCitizenSlot);
                 if (j != null && (j.VendorId != p.VendorId || j.ProductId != p.ProductId))
                     return $"Your saved setup has {Label(p)} on js{p.StarCitizenSlot}, but the bindings file now lists {j.ProductName} there.";
             }
@@ -466,39 +459,24 @@ public sealed class MainForm : Form
         static string Label(ProfileDevice d) => string.IsNullOrEmpty(d.FriendlyName) ? d.ProductName : d.FriendlyName;
     }
 
-    void WatchGame()
+    bool ResetBindings(string message)
     {
-        if (_applied == null) { _watch.Stop(); return; }
-        bool running = GameLauncher.IsGameRunning();
-        if (running && !_gameSeen) { _gameSeen = true; UpdateLaunchUi(); }
-        if (_gameSeen && !running)
+        if (_applied == null) return true;
+        if (GameLauncher.IsGameRunning())
         {
-            RestoreBindings("Star Citizen closed, so your bindings were put back to your saved setup.");
-            return;
+            MessageBox.Show(this, "Close Star Citizen first. It rewrites the bindings file when it quits, which would undo the change.", Text);
+            return false;
         }
-        // RSI Launcher closed without starting the game.
-        if (!_gameSeen && !GameLauncher.IsRsiLauncherRunning() && (DateTime.Now - _launchedAt).TotalSeconds > 60)
-            RestoreBindings("The game wasn't started, so your bindings were put back.");
-    }
-
-    void RestoreBindings(string message)
-    {
-        _watch.Stop();
-        if (_applied != null)
+        try { _applied.Restore(); }
+        catch (Exception ex)
         {
-            if (GameLauncher.IsGameRunning() &&
-                MessageBox.Show(this, "Star Citizen is still running and will overwrite the file when it closes. Put the bindings back anyway?",
-                    Text, MessageBoxButtons.YesNo) != DialogResult.Yes)
-            { _watch.Start(); return; }
-            try { _applied.Restore(); }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, "Could not put the bindings back:\n" + ex.Message + $"\n\nBackups are in {AppliedFix.BackupFolder}", Text);
-                return;
-            }
-            _applied = null;
+            MessageBox.Show(this, "Could not put the bindings back:\n" + ex.Message + $"\n\nBackups are in {AppliedFix.BackupFolder}", Text);
+            return false;
         }
+        _applied = null;
+        Rescan();
         UpdateLaunchUi(message);
+        return true;
     }
 
     // ---------- updates ----------
@@ -527,11 +505,6 @@ public sealed class MainForm : Form
     async Task InstallUpdate()
     {
         if (_available == null) return;
-        if (_applied != null)
-        {
-            MessageBox.Show(this, "Finish your Star Citizen session first. The update can install once your bindings are back to normal.", Text);
-            return;
-        }
         if (_dirty && !SaveProfile()) return;
         _update.Enabled = false;
         _update.Text = "Downloading...";
@@ -557,30 +530,17 @@ public sealed class MainForm : Form
 
     void UpdateLaunchUi(string? message = null)
     {
-        _launch.Enabled = _applied == null;
         _restore.Visible = _applied != null;
-        _import.Enabled = _applied == null;
         if (message != null) _launchState.Text = message;
-        else if (_applied == null) _launchState.Text = "Ready.";
-        else
-        {
-            var moves = string.Join(", ", _applied.Map.Where(kv => kv.Key != kv.Value && _profile.Devices.Any(d => d.StarCitizenSlot == kv.Key))
-                .OrderBy(kv => kv.Key).Select(kv => $"js{kv.Key}→js{kv.Value}"));
-            _launchState.Text = (_gameSeen ? "Star Citizen is running. " : "Waiting for Star Citizen to start. ") +
-                                $"Bindings moved: {moves}. They go back when the game closes.";
-        }
+        else _launchState.Text = _applied == null ? "Bindings are in your saved order." : $"Bindings are set for: {Moves()}.";
     }
+
+    string Moves() => _applied == null ? "" : string.Join(", ", _applied.Map
+        .Where(kv => kv.Key != kv.Value && _profile.Devices.Any(d => d.StarCitizenSlot == kv.Key))
+        .OrderBy(kv => kv.Key).Select(kv => $"js{kv.Key}→js{kv.Value}"));
 
     void OnClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_applied != null && e.CloseReason == CloseReason.UserClosing)
-        {
-            var a = MessageBox.Show(this,
-                "Star Citizen's bindings are set for this session. Keep Joystick Keeper open (minimized) so it can put them back when the game closes.\n\nClose anyway?",
-                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (a != DialogResult.Yes) { e.Cancel = true; return; }
-            // If they close anyway, the next start puts the bindings back.
-        }
         if (_dirty)
         {
             var a = MessageBox.Show(this, "Save your setup before closing?", Text, MessageBoxButtons.YesNoCancel);
@@ -588,7 +548,6 @@ public sealed class MainForm : Form
             if (a == DialogResult.Yes && !SaveProfile()) { e.Cancel = true; return; }
         }
         _poll.Stop();
-        _watch.Stop();
         CloseDevices();
         _di.Dispose();
     }

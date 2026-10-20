@@ -7,16 +7,17 @@ that number (`js1_button3`, `js2_x`, …). Plug things in differently and your r
 
 ## How it works
 
-1. **Save your setup once.** Joystick Keeper lists every controller, lights a row up when you move that device, and
-   reads your current `actionmaps.xml` to fill in which `js` slot each device's bindings were made on.
-2. **Start the game through Joystick Keeper.** "Fix bindings & open RSI Launcher" works out the slot each device will
-   actually get today, renumbers the `js` prefixes in `actionmaps.xml` to match (backup first), and opens the RSI Launcher.
-3. **Close the game.** Joystick Keeper notices `StarCitizen.exe` exit and renumbers the file back, keeping anything you
-   rebound in-game. If it's closed early, it puts the file back the next time it starts.
+1. **Save your setup once.** Joystick Keeper lists the controllers that are plugged in and lights a row up when you
+   move that device. Pick the `js` slot each device's bindings were made with (or click "Fill in from Star Citizen
+   bindings" to read them from `actionmaps.xml`), then click Save setup.
+2. **Click Update bindings** whenever your devices were plugged in differently, with the game closed. Joystick Keeper
+   works out the slot each device has today and renumbers the `js` prefixes in `actionmaps.xml` to match (backup first).
+   The file stays that way; the next update starts from it, so anything you rebound in-game is kept.
+3. **Reset to saved order** puts the file back in your saved numbering, if you ever want it.
 
 Xbox-style (XInput) controllers are skipped, since Star Citizen treats them as a gamepad, not a joystick.
 
-Files live in `%APPDATA%\JoystickKeeper` (`profile.json`, `applied.json` while a session is active, `backups\`).
+Files live in `%APPDATA%\JoystickKeeper` (`profile.json`, `applied.json` while the file is renumbered, `backups\`).
 
 ## Build
 
@@ -37,4 +38,3 @@ The release version is the `<Version>` in `src/JoystickKeeper/JoystickKeeper.csp
 merged into `main`, GitHub Actions runs the tests, builds `JoystickKeeper.exe` and `JoystickKeeper-Setup.exe`, and
 publishes them as release `v<Version>`. The app checks the latest release when it starts; if it's newer, an
 "Update to vX" button appears. Clicking it downloads the new exe, closes the app, swaps the file and reopens it.
-Updating is blocked while a Star Citizen session has the bindings remapped.
