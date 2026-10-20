@@ -37,4 +37,10 @@ Check(back == original, "putting it back gives the exact original file");
 var (map2, missing2) = BindingsFixer.ComputeMap(profile, scanned.Where(s=>s.Key!="231D:011F").Select(s => new ScannedDevice{Key=s.Key, GameSlot = s.GameSlot>4?4:s.GameSlot}).ToList());
 Check(missing2.SequenceEqual(new[]{"Rudder"}) && map2.Values.Distinct().Count()==map2.Count, "unplugged device reported, map still a clean swap");
 Check(BindingsFixer.IsIdentity(BindingsFixer.ComputeMap(profile, new List<ScannedDevice>{ new(){Key="231D:0200",GameSlot=1}, new(){Key="231D:012D",GameSlot=2}, new(){Key="231D:011F",GameSlot=3}, new(){Key="231D:0201",GameSlot=4}, new(){Key="1532:0266",GameSlot=5}}).map), "right order means no change");
+// Next day, a different order (R, L, STECS, Huntsman, Rudder): updating from yesterday's file lands where a fresh fix would
+var (map3, _) = BindingsFixer.ComputeMap(profile, new List<ScannedDevice>{ new(){Key="231D:0200",GameSlot=1}, new(){Key="231D:0201",GameSlot=2}, new(){Key="231D:012D",GameSlot=3}, new(){Key="1532:0266",GameSlot=4}, new(){Key="231D:011F",GameSlot=5}});
+var step = BindingsFixer.Compose(BindingsFixer.Invert(map), map3);
+Check(BindingsFixer.Remap(fixedText, step) == BindingsFixer.Remap(original, map3), "updating again from today's file matches a fresh fix for the new order");
+Check(BindingsFixer.IsIdentity(BindingsFixer.Compose(BindingsFixer.Invert(map), map)), "same order twice means no change");
+Check(new AppliedFix { Map = map }.HomeSlot(2) == 1 && new AppliedFix { Map = map }.HomeSlot(5) == 5, "file slot translates back to saved slot");
 Console.WriteLine(fails==0 ? "ALL PASSED" : $"{fails} FAILED"); return fails;
