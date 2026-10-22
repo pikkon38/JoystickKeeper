@@ -43,6 +43,7 @@ public sealed class MainForm : Form
         Width = 1200;
         Height = 760;
         MinimumSize = new Size(940, 560);
+        try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
