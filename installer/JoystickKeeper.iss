@@ -19,6 +19,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\JoystickKeeper.exe
+SetupIconFile=..\src\JoystickKeeper\JoystickKeeper.ico
 CloseApplications=yes
 
 [Tasks]
